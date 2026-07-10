@@ -114,8 +114,8 @@
         <bigdataviewer-playground.version>0.11.2</bigdataviewer-playground.version>
         
         <!-- BigVolumeBrowser -->
- 		<bigvolumebrowser.version>0.0.5</bigvolumebrowser.version>
-        <bvv-playground.version>0.5.1</bvv-playground.version>
+        <bigvolumebrowser.version>0.1.3</bigvolumebrowser.version>
+        <bvv-playground.version>0.5.7</bvv-playground.version>
 
         <annotations.version>16.0.2</annotations.version>
         <trove.version>1.0.2</trove.version>

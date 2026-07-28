@@ -1,5 +1,6 @@
 package org.embl.mobie.lib.data;
 
+import com.amazonaws.services.s3.model.S3ObjectInputStream;
 import ij.IJ;
 import net.imglib2.type.numeric.ARGBType;
 import net.thisptr.jackson.jq.internal.misc.Strings;

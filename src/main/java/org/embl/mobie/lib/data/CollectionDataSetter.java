@@ -689,7 +689,10 @@ public class CollectionDataSetter
     {
         try
         {
-            return getString( row, CollectionTableConstants.GRID_POSITION );
+            String string = getString( row, CollectionTableConstants.GRID_POSITION );
+            if ( string == null )
+                return NO_GRID_POSITION;
+            return string;
         }
         catch ( Exception e )
         {

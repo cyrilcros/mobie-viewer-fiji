@@ -855,4 +855,9 @@ public class ViewManager
 	{
 		return bigVolumeBrowser;
 	}
+
+	public UniverseManager getUniverseManager()
+	{
+		return universeManager;
+	}
 }

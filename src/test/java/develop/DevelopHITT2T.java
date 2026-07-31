@@ -1,6 +1,8 @@
 package develop;
 
+import ij3d.Image3DUniverse;
 import net.imagej.ImageJ;
+import org.embl.mobie.MoBIE;
 import org.embl.mobie.command.open.OpenCollectionTableCommand;
 import org.embl.mobie.command.open.special.OpenCollectionTableExpertCommand;
 import org.embl.mobie.lib.bdv.BdvViewingMode;

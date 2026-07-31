@@ -15,7 +15,12 @@
     <!--  https://sites.imagej.net/MoBIE/-->
 
     <!-- mvn clean install -Dscijava.app.directory=/Users/tischer/Desktop/Fiji/Fiji-MoBIE.app -->
-    <!-- DEBUG=1 ../scijava-scripts/release-version.sh - -skip-version-check  - -skip-license-update -->
+    <!--
+    ../scijava-scripts/release-version.sh - -skip-version-check  - -skip-license-update
+    git checkout mobie-viewer-fiji-6.7.8
+    mvn -DskipTests -Dscijava.app.directory=/Users/tischer/Desktop/Fiji/Fiji-MoBIE.app install
+    git checkout main
+    -->
     <!-- mvn javadoc:javadoc | grep error -->
 
     <url>https://github.com/mobie/mobie-viewer-fiji</url>

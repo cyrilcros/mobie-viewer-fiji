@@ -54,6 +54,7 @@ import org.embl.mobie.lib.image.*;
 import org.embl.mobie.lib.plot.ScatterPlotSettings;
 import org.embl.mobie.lib.plot.ScatterPlotView;
 import org.embl.mobie.lib.serialize.DataSource;
+import org.embl.mobie.lib.serialize.NumericAnnotationDataSource;
 import org.embl.mobie.lib.serialize.View;
 import org.embl.mobie.lib.serialize.display.*;
 import org.embl.mobie.lib.serialize.transformation.*;
@@ -415,6 +416,23 @@ public class ViewManager
 
 		if ( ! dataSources.isEmpty() )
 			moBIE.initDataSources( dataSources );
+
+		// Expand NumericAnnotationDataSources into NumericAnnotationImages.
+		// This must run after initDataSources() so that the base annotation
+		// images are guaranteed to be in DataStore.
+		for ( DataSource dataSource : dataSources )
+		{
+			if ( dataSource instanceof NumericAnnotationDataSource )
+			{
+				NumericAnnotationDataSource nas = ( NumericAnnotationDataSource ) dataSource;
+				Image< ? > baseImage = DataStore.getImage( nas.annotationSource );
+				@SuppressWarnings( { "unchecked", "rawtypes" } )
+				final NumericAnnotationImage numericImage = new NumericAnnotationImage(
+						( Image ) baseImage,
+						nas.column );
+				DataStore.addImage( numericImage );
+			}
+		}
 
 		// transform images
 		// this may create new images with new names

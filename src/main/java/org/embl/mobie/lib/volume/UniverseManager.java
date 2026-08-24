@@ -38,7 +38,7 @@ public class UniverseManager
 	{
 		if ( universe == null )
 		{
-			universe = new Image3DUniverse();
+			universe = new MoBIEUniverse();
 			universe.show();
 		}
 		return universe;

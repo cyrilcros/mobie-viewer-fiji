@@ -160,7 +160,7 @@ public class SegmentVolumeViewer< S extends Segment > implements ColoringListene
 
 		new Thread( () ->
 		{
-			universe.setAutoAdjustView( true );
+			universe.setAutoAdjustView( false );
 			updateSelectedSegments( recomputeMeshes );
 			removeUnselectedSegments();
 		}).start();

@@ -156,7 +156,6 @@ public class ImageVolumeViewer
 		final double[] contrastLimits = { displayRangeMin, displayRangeMax };
 		final ARGBType color = ( ( ColorConverter ) sac.getConverter() ).getColor();
 		final Content content = addSourceToUniverse( universe, sac.getSpimSource(), voxelSpacing, maxNumVoxels, ContentConstants.VOLUME, color, transparency, contrastLimits );
-		universe.adjustView( content );
 		sacToContent.put( sac, content );
 	}
 

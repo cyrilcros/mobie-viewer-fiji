@@ -46,8 +46,27 @@ package org.embl.mobie.lib.serialize;
  * }
  * }</pre>
  * <p>
- * The referenced {@code annotationSource} must be loaded before this source is expanded.
- * Expansion happens after all base sources have been initialised (in {@code ViewManager.initData()}).
+ * The referenced {@code annotationSource} is initialised automatically by
+ * {@code ViewManager.initData()} (which now also loads the base annotation sources of
+ * numeric annotations before expansion), so it does not need to be listed in the view
+ * itself. Expansion happens after all base sources have been initialised.
+ *
+ * <p>
+ * Sample view (view.json) that renders the numeric annotation as an image layer:
+ * <pre>{@code
+ * {
+ *   "sourceDisplays": [
+ *     { "segmentationDisplay": { "sources": [ "nuclei" ] } },
+ *     {
+ *       "imageDisplay": {
+ *         "sources": [ "nuclei-anchor_z" ],
+ *         "color": "viridis",
+ *         "contrastLimits": [ 0, 200 ]
+ *       }
+ *     }
+ *   ]
+ * }
+ * }</pre>
  */
 public class NumericAnnotationDataSource extends AbstractDataSource
 {

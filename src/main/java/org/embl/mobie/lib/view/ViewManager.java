@@ -381,6 +381,21 @@ public class ViewManager
 		// by a display or transformation)
 		List< DataSource > dataSources = moBIE.getDataSources( sourceToTransformOrDisplay.keySet() );
 
+		// Numeric annotation sources reference a base annotation source
+		// (e.g. a segmentation) via `annotationSource`. That base source
+		// may not be listed directly in the view, but it must be initialised
+		// before the numeric annotation image can be built (see expansion
+		// below). Include it here so the view loads it automatically.
+		final Set< String > baseAnnotationSourceNames = new HashSet<>();
+		for ( DataSource dataSource : dataSources )
+			if ( dataSource instanceof NumericAnnotationDataSource )
+				baseAnnotationSourceNames.add( ( ( NumericAnnotationDataSource ) dataSource ).annotationSource );
+
+		baseAnnotationSourceNames.removeAll( sourceToTransformOrDisplay.keySet() );
+
+		if ( ! baseAnnotationSourceNames.isEmpty() )
+			dataSources.addAll( moBIE.getDataSources( baseAnnotationSourceNames ) );
+
 		// if a view is created on the fly in a running project, e.g. due to an image registration
 		// the data sources may already be present and thus do not need to be instantiated
 		// HOWEVER: the issue here is that then an image may exist already and a transformation is applied twice (see below)

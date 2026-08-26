@@ -44,6 +44,7 @@ import org.embl.mobie.lib.image.Image;
 import org.embl.mobie.lib.select.SelectionListener;
 import org.embl.mobie.lib.select.SelectionModel;
 import org.embl.mobie.lib.source.AnnotationType;
+import org.embl.mobie.lib.util.ThreadHelper;
 import net.imglib2.type.numeric.ARGBType;
 import org.jogamp.java3d.Bounds;
 import org.jogamp.java3d.View;
@@ -55,9 +56,13 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Future;
 
 public class SegmentVolumeViewer< S extends Segment > implements ColoringListener, SelectionListener< S >
 {
@@ -184,24 +189,62 @@ public class SegmentVolumeViewer< S extends Segment > implements ColoringListene
 	{
 		final Set< S > selected = selectionModel.getSelected();
 
+		// Sequential pass: handle removals (scene-graph mutation) and
+		// gather the segments that still need a mesh.
+		final Map< S, Source< AnnotationType< S > > > toCreate = new LinkedHashMap<>();
 		for ( S segment : selected )
 		{
 			if ( segment.timePoint() == null || segment.timePoint() == currentTimePoint )
 			{
-				if ( recomputeMeshes ) removeSegment( segment );
+				if ( recomputeMeshes )
+					removeSegment( segment );
 
 				if ( ! segmentToContent.containsKey( segment ) )
-				{
-					final Source< AnnotationType< S > > source = getSource( segment );
-					final CustomTriangleMesh mesh = meshCreator.createSmoothCustomTriangleMesh( segment, voxelSpacing, recomputeMeshes, source );
-					mesh.setColor( getColor3f( segment ) );
-					addSegmentMeshToUniverse( segment, mesh );
-				}
+					toCreate.put( segment, getSource( segment ) );
 			}
 			else // segment is of another time point
 			{
 				removeSegment( segment );
 			}
+		}
+
+		// Phase 1: parallel mesh construction.
+		final Map< S, Future< CustomTriangleMesh > > futures = new LinkedHashMap<>();
+		for ( Map.Entry< S, Source< AnnotationType< S > > > entry : toCreate.entrySet() )
+		{
+			final S segment = entry.getKey();
+			final Source< AnnotationType< S > > source = entry.getValue();
+			futures.put( segment, ThreadHelper.executorService.submit( () ->
+					meshCreator.createSmoothCustomTriangleMesh( segment, voxelSpacing, recomputeMeshes, source ) ) );
+		}
+
+		// Phase 2: sequential scene-graph insertion, in selection order.
+		for ( Map.Entry< S, Future< CustomTriangleMesh > > entry : futures.entrySet() )
+		{
+			final S segment = entry.getKey();
+			final CustomTriangleMesh mesh = getMesh( entry.getValue() );
+			mesh.setColor( getColor3f( segment ) );
+			addSegmentMeshToUniverse( segment, mesh );
+		}
+	}
+
+	private static CustomTriangleMesh getMesh( Future< CustomTriangleMesh > future )
+	{
+		try
+		{
+			return future.get();
+		}
+		catch ( InterruptedException e )
+		{
+			Thread.currentThread().interrupt();
+			throw new RuntimeException( e );
+		}
+		catch ( ExecutionException e )
+		{
+			final Throwable cause = e.getCause();
+			if ( cause instanceof RuntimeException )
+				throw ( RuntimeException ) cause;
+			throw new RuntimeException( cause );
 		}
 	}
 

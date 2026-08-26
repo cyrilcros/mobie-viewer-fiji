@@ -69,6 +69,14 @@ public class MoBIEUniverse extends Image3DUniverse
 		menu.add( orientItem( "YZ (left)",   this::rotateToNegativeYZ ) );
 		menu.add( orientItem( "YZ (right)",  this::rotateToPositiveYZ ) );
 
+		menu.addSeparator();
+
+		// Canonical XY plane view (reset to identity), and views
+		// rotated around the Z axis by +/-45 degrees from that plane.
+		menu.add( orientItem( "XY (plane)", () -> rotateView( Z_AXIS, 0, true ) ) );
+		menu.add( orientItem( "Z +45°",     () -> rotateView( Z_AXIS, 45, true ) ) );
+		menu.add( orientItem( "Z -45°",     () -> rotateView( Z_AXIS, -45, true ) ) );
+
 		return menu;
 	}
 

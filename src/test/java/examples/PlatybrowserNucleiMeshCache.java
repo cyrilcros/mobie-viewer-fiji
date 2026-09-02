@@ -141,7 +141,10 @@ public class PlatybrowserNucleiMeshCache
 				: display.segmentVolumeViewer.getMeshCache().size();
 		System.out.println( "Done. Cached meshes: " + cached );
 		System.out.println( "Cache files under: " + MoBIEHelper.getMeshCacheDir() );
-		System.exit( 0 );
+		// System.exit( 0 ) can hang here because Fiji/Java3D register shutdown
+		// hooks that keep the JVM alive. halt() skips them; the cache is already
+		// flushed to disk, so there is nothing left to clean up.
+		Runtime.getRuntime().halt( 0 );
 	}
 
 	@SuppressWarnings( { "unchecked", "rawtypes" } )

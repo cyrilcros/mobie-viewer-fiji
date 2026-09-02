@@ -13,12 +13,12 @@ import java.util.List;
 import java.util.stream.Collectors;
 
 /**
- * Pre-renders or renders the first {@code maxLabel} nuclei of the PlatyBrowser
- * 2025 dataset through the segment mesh cache.
+ * Pre-renders or renders nuclei of the PlatyBrowser 2025 dataset through the
+ * segment mesh cache.
  *
  * <p>Two modes (first program argument):
  * <ul>
- *   <li>{@code cache}  - compute + smooth the meshes of all nuclei with
+ *   <li>{@code cache}  - compute + smooth the meshes of the nuclei with
  *                        0 &lt; label &lt; maxLabel and write them to the disk
  *                        cache (~/.mobie/mesh-cache), then exit.</li>
  *   <li>{@code render} - open the interactive Fiji 3D viewer showing exactly
@@ -28,7 +28,12 @@ import java.util.stream.Collectors;
  *
  * <p>Optional further program arguments (all with defaults):
  * {@code [branch] [dataset] [view] [spacing-um] [maxLabel]}
- * e.g. {@code render main platybrowser_6dpf nuclei 0.5 1000}
+ * e.g. {@code render main platybrowser_6dpf nuclei 0.08 1000}
+ * Defaults: branch {@code main}, dataset {@code platybrowser_6dpf}, view
+ * {@code nuclei}, spacing {@code 0.08} µm (isotropic; equals the native
+ * level-0 voxel size of the nuclei source, 0.08 x 0.08 x 0.1 µm, so the
+ * finest pyramid level is selected), maxLabel unlimited (all nuclei in the
+ * table).
  *
  * <p>The mesh cache only activates when the segment volume viewer has a fixed
  * 3D voxel spacing. The plain "nuclei" view does not declare one, so this
@@ -47,8 +52,8 @@ public class PlatybrowserNucleiMeshCache
 		final String branch = args.length > 1 ? args[ 1 ] : "main";
 		final String dataset = args.length > 2 ? args[ 2 ] : "platybrowser_6dpf";
 		final String view = args.length > 3 ? args[ 3 ] : "nuclei";
-		final double spacing = args.length > 4 ? Double.parseDouble( args[ 4 ] ) : 0.5;
-		final long maxLabel = args.length > 5 ? Long.parseLong( args[ 5 ] ) : 1000;
+		final double spacing = args.length > 4 ? Double.parseDouble( args[ 4 ] ) : 0.08;
+		final long maxLabel = args.length > 5 ? Long.parseLong( args[ 5 ] ) : Long.MAX_VALUE;
 
 		if ( ! mode.equals( "cache" ) && ! mode.equals( "render" ) )
 			throw new IllegalArgumentException( "First argument must be 'cache' or 'render'; got: " + mode );
@@ -110,7 +115,8 @@ public class PlatybrowserNucleiMeshCache
 		if ( subset.isEmpty() )
 			throw new RuntimeException( "No segments with 0 < label < " + maxLabel + " in display " + display.getName() );
 
-		System.out.println( "Subset: " + subset.size() + " segments (labels 1.." + ( maxLabel - 1 ) + ")" );
+		System.out.println( "Subset: " + subset.size() + " segments"
+				+ ( maxLabel == Long.MAX_VALUE ? " (all nuclei)" : " (labels 1.." + ( maxLabel - 1 ) + ")" ) );
 
 		if ( mode.equals( "cache" ) )
 			preRender( display, subset );

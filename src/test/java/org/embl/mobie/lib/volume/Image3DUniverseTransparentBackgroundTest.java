@@ -37,6 +37,7 @@ import org.jogamp.java3d.Canvas3D;
 import org.jogamp.java3d.GraphicsConfigTemplate3D;
 import org.jogamp.java3d.ImageComponent;
 import org.jogamp.java3d.ImageComponent2D;
+import org.jogamp.java3d.Node;
 import org.jogamp.java3d.Screen3D;
 import org.jogamp.vecmath.Color3f;
 import org.jogamp.vecmath.Point3f;
@@ -120,7 +121,10 @@ class Image3DUniverseTransparentBackgroundTest
 
 			// Detach the opaque Background node, so the render is cleared with
 			// the (fully transparent) offscreen canvas background instead.
-			scene.removeChild( background );
+			// Note: removeChild( Node ) only accepts BranchGroups; remove by index.
+			final int backgroundIndex = indexOfChild( scene, background );
+			assumeTrue( backgroundIndex >= 0, "Background node not found in scene" );
+			scene.removeChild( backgroundIndex );
 			detached = true;
 
 			final BufferedImage snapshot = renderOffscreen( universe );
@@ -145,6 +149,13 @@ class Image3DUniverseTransparentBackgroundTest
 	}
 
 	// -- helpers ------------------------------------------------------------
+
+	private static int indexOfChild( final BranchGroup group, final Node child )
+	{
+		for ( int i = 0; i < group.numChildren(); i++ )
+			if ( group.getChild( i ) == child ) return i;
+		return -1;
+	}
 
 	private static void require3DTestEnvironment()
 	{

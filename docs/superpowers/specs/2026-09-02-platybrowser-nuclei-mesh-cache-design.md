@@ -75,7 +75,8 @@ One Java main `PlatybrowserNucleiMeshCache` in `src/test/java/examples/`
 - `args[0]` mode: `cache` | `render`.
 - Optional further args (with defaults):
   `branch` = `main`, `dataset` = `platybrowser_6dpf`, `view` = `nuclei`,
-  `spacing` = `0.5` (µm, first element used for all axes),
+  `spacing` = `0.5` (µm; applied **isotropically** as `(spacing, spacing, spacing)`,
+  the first element also keys the cache file name),
   `maxLabel` = `1000` (exclusive upper bound).
 
 ### Shared steps (both modes)

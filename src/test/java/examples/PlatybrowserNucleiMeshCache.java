@@ -28,12 +28,12 @@ import java.util.stream.Collectors;
  *
  * <p>Optional further program arguments (all with defaults):
  * {@code [branch] [dataset] [view] [spacing-um] [maxLabel]}
- * e.g. {@code render main platybrowser_6dpf nuclei 0.08 1000}
+ * e.g. {@code render main platybrowser_6dpf nuclei 0.1 1000}
  * Defaults: branch {@code main}, dataset {@code platybrowser_6dpf}, view
- * {@code nuclei}, spacing {@code 0.08} µm (isotropic; equals the native
- * level-0 voxel size of the nuclei source, 0.08 x 0.08 x 0.1 µm, so the
- * finest pyramid level is selected), maxLabel unlimited (all nuclei in the
- * table).
+ * {@code nuclei}, spacing {@code 0.1} µm (isotropic; selects the first
+ * pyramid level above native — actual mesh spacing ~0.16-0.2 µm, roughly
+ * 8x lighter than native level-0 and a good speed/detail balance),
+ * maxLabel unlimited (all nuclei in the table).
  *
  * <p>The mesh cache only activates when the segment volume viewer has a fixed
  * 3D voxel spacing. The plain "nuclei" view does not declare one, so this
@@ -52,7 +52,7 @@ public class PlatybrowserNucleiMeshCache
 		final String branch = args.length > 1 ? args[ 1 ] : "main";
 		final String dataset = args.length > 2 ? args[ 2 ] : "platybrowser_6dpf";
 		final String view = args.length > 3 ? args[ 3 ] : "nuclei";
-		final double spacing = args.length > 4 ? Double.parseDouble( args[ 4 ] ) : 0.08;
+		final double spacing = args.length > 4 ? Double.parseDouble( args[ 4 ] ) : 0.1;
 		final long maxLabel = args.length > 5 ? Long.parseLong( args[ 5 ] ) : Long.MAX_VALUE;
 
 		if ( ! mode.equals( "cache" ) && ! mode.equals( "render" ) )

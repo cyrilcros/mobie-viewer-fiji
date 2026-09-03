@@ -18,29 +18,35 @@ import java.util.stream.Collectors;
  *
  * <p>Two modes (first program argument):
  * <ul>
- *   <li>{@code cache}  - compute + smooth the meshes of the nuclei with
+ *   <li>{@code cache}  - compute + smooth the meshes of the segments with
  *                        0 &lt; label &lt; maxLabel and write them to the disk
  *                        cache (~/.mobie/mesh-cache), then exit.</li>
  *   <li>{@code render} - open the interactive Fiji 3D viewer showing exactly
- *                        those nuclei (loading from the cache when present),
+ *                        those segments (loading from the cache when present),
  *                        for manual screenshots; keep running until closed.</li>
  * </ul>
  *
  * <p>Optional further program arguments (all with defaults):
- * {@code [branch] [dataset] [view] [spacing-um] [maxLabel]}
- * e.g. {@code render main platybrowser_6dpf nuclei 0.1 1000}
+ * {@code [branch] [dataset] [view] [spacing-um] [maxLabel] [display]}
+ * e.g. {@code cache main platybrowser_6dpf "combined traces and nuclei" 0.08}
+ * or   {@code cache main platybrowser_6dpf cells 0.1}
  * Defaults: branch {@code main}, dataset {@code platybrowser_6dpf}, view
  * {@code nuclei}, spacing {@code 0.1} µm (isotropic; selects the first
  * pyramid level above native — actual mesh spacing ~0.16-0.2 µm, roughly
  * 8x lighter than native level-0 and a good speed/detail balance),
- * maxLabel unlimited (all nuclei in the table).
+ * maxLabel unlimited (all segments in the table), display = view name.
+ *
+ * <p>Any segmentation display of the dataset works — nuclei, cells,
+ * combined traces and nuclei, ... The mesh cache is named after the
+ * segmentation display (e.g. {@code nuclei-sm5-0_1um.mel},
+ * {@code cells-sm5-0_1um.mel}, {@code combined traces and nuclei-sm5-0_08um.mel}).
  *
  * <p>The mesh cache only activates when the segment volume viewer has a fixed
- * 3D voxel spacing. The plain "nuclei" view does not declare one, so this
- * harness sets it explicitly (isotropic {@code spacing}) before configuring
- * the cache. Run {@code cache} once (slow, network + marching cubes), then
- * {@code render} any time (fast, loads from the cache). Changing the spacing
- * argument yields a different cache file.
+ * 3D voxel spacing. The plain views (nuclei, cells, combined traces and
+ * nuclei) do not declare one, so this harness sets it explicitly (isotropic
+ * {@code spacing}) before configuring the cache. Run {@code cache} once (slow,
+ * network + marching cubes), then {@code render} any time (fast, loads from
+ * the cache). Changing the spacing argument yields a different cache file.
  */
 public class PlatybrowserNucleiMeshCache
 {
@@ -54,6 +60,7 @@ public class PlatybrowserNucleiMeshCache
 		final String view = args.length > 3 ? args[ 3 ] : "nuclei";
 		final double spacing = args.length > 4 ? Double.parseDouble( args[ 4 ] ) : 0.1;
 		final long maxLabel = args.length > 5 ? Long.parseLong( args[ 5 ] ) : Long.MAX_VALUE;
+		final String displayName = args.length > 6 ? args[ 6 ] : view;
 
 		if ( ! mode.equals( "cache" ) && ! mode.equals( "render" ) )
 			throw new IllegalArgumentException( "First argument must be 'cache' or 'render'; got: " + mode );
@@ -70,11 +77,11 @@ public class PlatybrowserNucleiMeshCache
 
 		final MoBIE moBIE = new MoBIE( PROJECT, settings );
 
-		run( moBIE, mode, spacing, maxLabel );
+		run( moBIE, mode, displayName, spacing, maxLabel );
 	}
 
 	@SuppressWarnings( { "unchecked", "rawtypes" } )
-	private static void run( MoBIE moBIE, String mode, double spacing, long maxLabel ) throws Exception
+	private static void run( MoBIE moBIE, String mode, String displayName, double spacing, long maxLabel ) throws Exception
 	{
 		final ViewManager viewManager = moBIE.getViewManager();
 		final List< SegmentationDisplay > segmentationDisplays = viewManager.getCurrentSegmentationDisplays();
@@ -84,16 +91,26 @@ public class PlatybrowserNucleiMeshCache
 					"No segmentation displays found in the current view. "
 							+ "Open a view that contains a segmentation (e.g. view \"nuclei\")." );
 
-		// Find the nuclei segmentation display, falling back to the first one.
+		// Find the requested segmentation display (exact match first, then
+		// case-insensitive substring), falling back to the first one.
 		SegmentationDisplay display = null;
 		for ( SegmentationDisplay candidate : segmentationDisplays )
 		{
-			if ( candidate.getName() != null && candidate.getName().toLowerCase().contains( "nuclei" ) )
+			if ( candidate.getName() != null && candidate.getName().equalsIgnoreCase( displayName ) )
 			{
 				display = candidate;
 				break;
 			}
 		}
+		if ( display == null )
+			for ( SegmentationDisplay candidate : segmentationDisplays )
+			{
+				if ( candidate.getName() != null && candidate.getName().toLowerCase().contains( displayName.toLowerCase() ) )
+				{
+					display = candidate;
+					break;
+				}
+			}
 		if ( display == null )
 			display = segmentationDisplays.get( 0 );
 		System.out.println( "Segmentation display: " + display.getName() );
@@ -102,10 +119,10 @@ public class PlatybrowserNucleiMeshCache
 			throw new RuntimeException( "Segment volume viewer not initialised for display " + display.getName() );
 
 		// The mesh cache only works with a fixed 3D voxel spacing; the plain
-		// "nuclei" view does not declare one, so set it and enable the cache.
+		// views do not declare one, so set it and enable the cache.
 		if ( display.segmentVolumeViewer.getVoxelSpacing() == null )
 			display.segmentVolumeViewer.setVoxelSpacing( new double[] { spacing, spacing, spacing } );
-		display.segmentVolumeViewer.configureMeshCache( "nuclei", MoBIEHelper.getMeshCacheDir() );
+		display.segmentVolumeViewer.configureMeshCache( display.getName(), MoBIEHelper.getMeshCacheDir() );
 		System.out.println( "3D voxel spacing: " + spacing + " um (isotropic); cache dir: " + MoBIEHelper.getMeshCacheDir() );
 
 		final List< AnnotatedSegment > subset = annotations( display ).stream()
@@ -116,7 +133,7 @@ public class PlatybrowserNucleiMeshCache
 			throw new RuntimeException( "No segments with 0 < label < " + maxLabel + " in display " + display.getName() );
 
 		System.out.println( "Subset: " + subset.size() + " segments"
-				+ ( maxLabel == Long.MAX_VALUE ? " (all nuclei)" : " (labels 1.." + ( maxLabel - 1 ) + ")" ) );
+				+ ( maxLabel == Long.MAX_VALUE ? " (all)" : " (labels 1.." + ( maxLabel - 1 ) + ")" ) );
 
 		if ( mode.equals( "cache" ) )
 			preRender( display, subset );
@@ -159,6 +176,6 @@ public class PlatybrowserNucleiMeshCache
 		display.selectionModel.clearSelection();
 		display.selectionModel.setSelected( subset, true );
 		display.segmentVolumeViewer.showSegments( true, true );
-		System.out.println( "3D view open with " + subset.size() + " nuclei (labels below maxLabel). Rotate/zoom; screenshot; close to exit." );
+		System.out.println( "3D view open with " + subset.size() + " segments (labels below maxLabel). Rotate/zoom; screenshot; close to exit." );
 	}
 }

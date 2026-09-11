@@ -1,0 +1,29 @@
+name: package
+
+on:
+  workflow_dispatch:
+  push:
+    paths-ignore:
+      - "**.md"
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: zulu
+          java-version: '8'
+          cache: maven
+      - name: Install native dependencies
+        run: sudo apt-get update && sudo apt-get install -y libblosc-dev xvfb
+      - name: Build
+        run: mvn -B -DskipTests clean package
+      - name: Upload jar
+        uses: actions/upload-artifact@v4
+        with:
+          name: mobie-viewer-fiji-jar
+          path: target/mobie-viewer-fiji-*.jar
+          if-no-files-found: error

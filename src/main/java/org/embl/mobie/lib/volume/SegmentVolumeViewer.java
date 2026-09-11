@@ -92,6 +92,7 @@ public class SegmentVolumeViewer< S extends Segment > implements ColoringListene
 	private List< VisibilityListener > listeners = new ArrayList<>(  );
 	private ImageWindow3D window;
 	private Image3DUniverse universe;
+	private static final int MAX_LOGGED_RENDER_FAILURES = 10;
 
 	public SegmentVolumeViewer(
 			final SelectionModel< S > selectionModel,
@@ -359,9 +360,19 @@ public class SegmentVolumeViewer< S extends Segment > implements ColoringListene
 			removeSegment( segment );
 	}
 
+	/** Outcome of rendering a single segment into the 3D universe. */
+	private enum SegmentRenderResult
+	{
+		RENDERED,
+		SKIPPED_NO_VOXELS,
+		FAILED
+	}
+
 	private synchronized void updateSelectedSegments( boolean recomputeMeshes )
 	{
 		final Set< S > selected = selectionModel.getSelected();
+		final AtomicInteger failures = new AtomicInteger( 0 );
+		int noVoxels = 0;
 
 		for ( S segment : selected )
 		{
@@ -371,16 +382,60 @@ public class SegmentVolumeViewer< S extends Segment > implements ColoringListene
 
 				if ( ! segmentToContent.containsKey( segment ) )
 				{
-					final Source< AnnotationType< S > > source = getSource( segment );
-					final CustomTriangleMesh mesh = meshCreator.createSmoothCustomTriangleMesh( segment, voxelSpacing, recomputeMeshes, source );
-					mesh.setColor( getColor3f( segment ) );
-					addSegmentMeshToUniverse( segment, mesh );
+					final SegmentRenderResult result = renderSegment( segment, recomputeMeshes, failures );
+					if ( result == SegmentRenderResult.SKIPPED_NO_VOXELS )
+						noVoxels++;
 				}
 			}
 			else // segment is of another time point
 			{
 				removeSegment( segment );
 			}
+		}
+
+		if ( noVoxels > 0 )
+			IJ.log( "[MoBIE] " + noVoxels + " selected segment(s) have no voxels in the image volume and were skipped." );
+
+		if ( failures.get() > 0 )
+			IJ.log( "[MoBIE] " + failures.get() + " of " + selected.size() + " selected segments could not be rendered in 3D." );
+	}
+
+	/**
+	 * Renders a single segment into the 3D universe.
+	 * <p>
+	 * Failures are contained to this segment: the exception is classified,
+	 * logged (capped at {@link #MAX_LOGGED_RENDER_FAILURES}) and the render
+	 * continues with the remaining segments, so that one bad segment cannot
+	 * abort the whole 3D view.
+	 *
+	 * @return how the segment was handled
+	 */
+	private SegmentRenderResult renderSegment( S segment, boolean recomputeMeshes, AtomicInteger failures )
+	{
+		try
+		{
+			final Source< AnnotationType< S > > source = getSource( segment );
+			final CustomTriangleMesh mesh = meshCreator.createSmoothCustomTriangleMesh( segment, voxelSpacing, recomputeMeshes, source );
+			mesh.setColor( getColor3f( segment ) );
+			addSegmentMeshToUniverse( segment, mesh );
+			return SegmentRenderResult.RENDERED;
+		}
+		catch ( Exception e )
+		{
+			if ( noVoxelsInImage( e ) )
+			{
+				// benign: the label is absent from the volume at all levels
+				return SegmentRenderResult.SKIPPED_NO_VOXELS;
+			}
+
+			final int failureCount = failures.incrementAndGet();
+			if ( failureCount <= MAX_LOGGED_RENDER_FAILURES )
+			{
+				final Throwable cause = e.getCause();
+				IJ.log( "[MoBIE] Could not render segment " + segment.label() + " in 3D: " + e.getMessage()
+						+ ( cause != null ? " (cause: " + cause.getMessage() + ")" : "" ) );
+			}
+			return SegmentRenderResult.FAILED;
 		}
 	}
 
@@ -497,8 +552,18 @@ public class SegmentVolumeViewer< S extends Segment > implements ColoringListene
 		final Bounds bounds = mesh.getBounds();
 		final Content content = universe.addCustomMesh( mesh, "" + segment.hashCode() );
 
-		content.setTransparency( ( float ) transparency );
-		content.setLocked( true );
+		try
+		{
+			content.setTransparency( ( float ) transparency );
+			content.setLocked( true );
+		}
+		catch ( Exception e )
+		{
+			// Do not leave an orphaned content in the universe when it
+			// could not be fully configured.
+			universe.removeContent( content.getName() );
+			throw e;
+		}
 
 		segmentToContent.put( segment, content );
 		contentToSegment.put( content, segment );

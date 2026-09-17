@@ -37,6 +37,7 @@ import bdv.viewer.Source;
 import bdv.viewer.SourceAndConverter;
 import bdv.viewer.ViewerPanel;
 import ij.IJ;
+import ij.Prefs;
 import mpicbg.spim.data.sequence.FinalVoxelDimensions;
 import mpicbg.spim.data.sequence.VoxelDimensions;
 import net.imglib2.*;
@@ -75,14 +76,15 @@ import org.embl.mobie.lib.source.SourceHelper;
 import org.embl.mobie.lib.transform.InterpolatedAffineRealTransform;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
-import sc.fiji.bdvpg.bdv.BdvHandleHelper;
-import sc.fiji.bdvpg.scijava.services.SourceAndConverterBdvDisplayService;
-import sc.fiji.bdvpg.services.SourceAndConverterServices;
+import sc.fiji.bdvpg.viewer.bdv.BdvHandleHelper;
+import sc.fiji.bdvpg.scijava.service.SourceBdvDisplayService;
+import sc.fiji.bdvpg.service.SourceServices;
 
 import java.io.File;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.text.DecimalFormat;
+import java.text.NumberFormat;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
@@ -93,7 +95,7 @@ import java.util.stream.DoubleStream;
 
 import static org.embl.mobie.io.util.IOHelper.combinePath;
 import static org.embl.mobie.io.util.IOHelper.getPaths;
-import static sc.fiji.bdvpg.bdv.BdvHandleHelper.isSourceIntersectingCurrentView;
+import static sc.fiji.bdvpg.viewer.bdv.BdvHandleHelper.isSourceIntersectingCurrentView;
 
 public abstract class MoBIEHelper
 {
@@ -286,7 +288,8 @@ public abstract class MoBIEHelper
 			if (Math.abs(value) < 1e-10) {
 				value = 0.0; // avoid printing "-0" for near-zero values
 			}
-			result.append(formatDouble(value, numSignificantDigits));
+			String formatDouble = formatDouble( value, numSignificantDigits );
+			result.append( formatDouble );
 			if (i < array.length - 1) {
 				result.append(", ");
 			}
@@ -304,11 +307,13 @@ public abstract class MoBIEHelper
 		if (numSignificantDigits == -1)
 			return Double.toString(value);
 
+		DecimalFormat formatter = (DecimalFormat) NumberFormat.getNumberInstance(Locale.US);
 		StringBuilder pattern = new StringBuilder("#");
 		if (numSignificantDigits > 0) pattern.append(".");
 		for (int i = 0; i < numSignificantDigits; i++) pattern.append("#");
-		DecimalFormat formatter = new DecimalFormat(pattern.toString());
-		return formatter.format(value);
+		formatter.applyPattern(pattern.toString());
+		String formatted = formatter.format( value );
+		return formatted;
 	}
 
 	public static <E extends Enum<E>> String[] enumAsStringArray(Class<E> enumClass) {
@@ -490,9 +495,9 @@ public abstract class MoBIEHelper
 
     public static List< SourceAndConverter< ? > > getVisibleSacs( BdvHandle bdv )
     {
-        final SourceAndConverterBdvDisplayService displayService = SourceAndConverterServices.getBdvDisplayService();
+        final SourceBdvDisplayService displayService = SourceServices.getBdvDisplayService();
 
-        final List< SourceAndConverter< ? > > sacs = displayService.getSourceAndConverterOf( bdv );
+        final List< SourceAndConverter< ? > > sacs = displayService.getSourcesOf( bdv );
 
         List< SourceAndConverter< ? > > visibleSacs = new ArrayList<>(  );
         for ( SourceAndConverter< ? > sac : sacs )
@@ -524,8 +529,8 @@ public abstract class MoBIEHelper
 
 	public static List< SourceAndConverter< ? > > getSacs( BdvHandle bdv )
 	{
-		final SourceAndConverterBdvDisplayService displayService = SourceAndConverterServices.getBdvDisplayService();
-		return displayService.getSourceAndConverterOf( bdv );
+		final SourceBdvDisplayService displayService = SourceServices.getBdvDisplayService();
+		return displayService.getSourcesOf( bdv );
 	}
 
     public static VoxelDimensions getPixelDimensions()
@@ -1392,5 +1397,35 @@ public abstract class MoBIEHelper
 			}
 		}
 		return types;
+	}
+
+	private static final String MESH_CACHE_DIR_PROPERTY = "mobie.meshCacheDir";
+
+	private static final String MESH_CACHE_DIR_PREFS_KEY = "MoBIE.meshCacheDir";
+
+	private static final String DEFAULT_MESH_CACHE_DIR = ".mobie/mesh-cache";
+
+	/**
+	 * Root directory of the disk-backed segment mesh cache.
+	 * <p>
+	 * The location is resolved with the following precedence:
+	 * <ol>
+	 *   <li>system property {@code mobie.meshCacheDir} (handy for CI/headless runs),</li>
+	 *   <li>ImageJ preference {@code MoBIE.meshCacheDir} ({@link ij.Prefs}, the
+	 *       portable per-user preference store across operating systems),</li>
+	 *   <li>default {@code <user.home>/.mobie/mesh-cache}.</li>
+	 * </ol>
+	 */
+	public static File getMeshCacheDir()
+	{
+		final String propertyDir = System.getProperty( MESH_CACHE_DIR_PROPERTY );
+		if ( propertyDir != null && !propertyDir.isEmpty() )
+			return new File( propertyDir );
+
+		final String prefsDir = Prefs.get( MESH_CACHE_DIR_PREFS_KEY, "" );
+		if ( prefsDir != null && !prefsDir.isEmpty() )
+			return new File( prefsDir );
+
+		return new File( System.getProperty( "user.home" ), DEFAULT_MESH_CACHE_DIR );
 	}
 }

@@ -42,6 +42,7 @@ import net.imglib2.type.numeric.ARGBType;
 import org.embl.mobie.command.context.ConfigureSegmentRenderingCommand;
 import org.embl.mobie.io.util.IOHelper;
 import org.embl.mobie.MoBIE;
+import org.embl.mobie.lib.bdv.overlay.ImageNameOverlay;
 import org.embl.mobie.lib.io.FileLocation;
 import org.embl.mobie.lib.Services;
 import org.embl.mobie.lib.bvb.BVBVisibilityListener;
@@ -62,8 +63,9 @@ import org.embl.mobie.lib.transform.viewer.ViewerTransform;
 import org.embl.mobie.lib.volume.ImageVolumeViewer;
 import org.embl.mobie.lib.volume.SegmentVolumeViewer;
 import org.jetbrains.annotations.NotNull;
-import sc.fiji.bdvpg.services.SourceAndConverterServices;
-import sc.fiji.bdvpg.sourceandconverter.display.ColorChanger;
+import sc.fiji.bdvpg.scijava.service.SourceBdvDisplayService;
+import sc.fiji.bdvpg.service.SourceServices;
+import sc.fiji.bdvpg.source.display.ColorChanger;
 
 import javax.swing.*;
 import javax.swing.event.DocumentEvent;
@@ -451,6 +453,9 @@ public class UserInterfaceHelper
 
 		List< ? extends SourceAndConverter< ? > > sourceAndConverters = display.sourceAndConverters();
 
+		// for debugging
+		//sourceAndConverters.forEach( sourceAndConverter -> System.out.println( "UI: " + System.identityHashCode(sourceAndConverter) ) );
+
 		// Buttons
 		panel.add( space() );
 		panel.add( createFocusButton( display, display.sliceViewer.getBdvHandle(), sourceAndConverters.stream().map( sac -> sac.getSpimSource() ).collect( Collectors.toList() ) ) );
@@ -470,7 +475,7 @@ public class UserInterfaceHelper
 		// make the panel color listen to color changes of the sources
 		for ( SourceAndConverter< ? > sourceAndConverter : sourceAndConverters )
 		{
-			SourceAndConverterServices.getSourceAndConverterService().getConverterSetup( sourceAndConverter ).setupChangeListeners().add( setup -> {
+			SourceServices.getSourceService().getConverterSetup( sourceAndConverter ).setupChangeListeners().add(setup -> {
 				// color changed listener
 				setPanelColor( panel, setup.getColor() );
 			} );
@@ -512,6 +517,8 @@ public class UserInterfaceHelper
 		{
 			// segments 3D view
 			panel.add( createSegmentsVolumeViewerVisibilityCheckbox( display ) );
+			// mesh pre-render
+			panel.add( createMeshPreRenderButton( display ) );
 			// BVV view
 			panel.add( createBVBVolumeVisibilityCheckbox( display, sourceAndConverters ) );
 			// table view
@@ -1038,6 +1045,52 @@ public class UserInterfaceHelper
 		return Box.createRigidArea( PREFERRED_BUTTON_SIZE );
 	}
 
+	private static JButton createMeshPreRenderButton( SegmentationDisplay display )
+	{
+		JButton button = new JButton( "M" );
+		button.setToolTipText( "Pre-render all segment meshes to disk cache" );
+		button.setPreferredSize( PREFERRED_CHECKBOX_SIZE );
+		button.setMargin( new java.awt.Insets( 0, 0, 0, 0 ) );
+
+		button.addActionListener( e -> new Thread( () ->
+		{
+			button.setEnabled( false );
+			button.setText( "..." );
+
+			try
+			{
+				final java.util.Collection segments;
+				if ( display.getAnnData() != null && display.getAnnData().getTable() != null )
+					segments = display.getAnnData().getTable().annotations();
+				else
+					segments = display.selectionModel.getSelected();
+
+				if ( segments.isEmpty() )
+				{
+					IJ.showMessage( "No segments to pre-render." );
+					return;
+				}
+
+				IJ.showStatus( "Pre-rendering " + segments.size() + " segment meshes..." );
+				display.segmentVolumeViewer.preRenderSegments( segments );
+				IJ.showStatus( "Pre-rendering complete. " + display.segmentVolumeViewer.getMeshCache().size() + " meshes cached." );
+			}
+			catch ( Exception ex )
+			{
+				IJ.showMessage( "Mesh pre-render failed: " + ex.getMessage() );
+			}
+			finally
+			{
+				SwingUtilities.invokeLater( () -> {
+					button.setText( "M" );
+					button.setEnabled( true );
+				} );
+			}
+		} ).start() );
+
+		return button;
+	}
+
 	private static Component createCheckboxPlaceholder()
 	{
 		return Box.createRigidArea( PREFERRED_CHECKBOX_SIZE );
@@ -1085,9 +1138,17 @@ public class UserInterfaceHelper
 			@Override
 			public void actionPerformed( ActionEvent e )
 			{
+				SourceBdvDisplayService bdvDisplayService = SourceServices.getBdvDisplayService();
+
 				for ( SourceAndConverter< ? > sourceAndConverter : sourceAndConverters )
 				{
-					SourceAndConverterServices.getBdvDisplayService().setVisible( sourceAndConverter, checkBox.isSelected() );
+					bdvDisplayService.setVisible( sourceAndConverter, checkBox.isSelected() );
+					List< BdvHandle > displays = bdvDisplayService.getDisplays();
+					System.out.println( System.identityHashCode( sourceAndConverter ) );
+					Set< BdvHandle > displaysOf = bdvDisplayService.getDisplaysOf( sourceAndConverter );
+					displaysOf
+							.forEach( bdvhr -> bdvhr.getViewerPanel().state()
+									.setSourceActive( sourceAndConverter, checkBox.isSelected() ) );
 				}
 			}
 		} );
@@ -1207,7 +1268,6 @@ public class UserInterfaceHelper
 		}
 		else
 		{
-		
 			checkBox.addActionListener( new ActionListener()
 			{
 				@Override
@@ -1230,7 +1290,7 @@ public class UserInterfaceHelper
 		checkBox.setSelected( false );
 		checkBox.setPreferredSize( PREFERRED_CHECKBOX_SIZE );
 		
-		if(display.bigVolumeBrowser != null)
+		if( display.bigVolumeBrowser != null )
 		{		
 			checkBox.addActionListener( new ActionListener()
 			{

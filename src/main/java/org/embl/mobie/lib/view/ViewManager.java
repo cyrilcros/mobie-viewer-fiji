@@ -32,6 +32,7 @@ import bdv.util.BdvHandle;
 import bdv.viewer.Source;
 import bdv.viewer.SourceAndConverter;
 import ij.IJ;
+import java.io.File;
 import net.imglib2.realtransform.AffineTransform3D;
 import net.imglib2.roi.RealMaskRealInterval;
 import net.imglib2.type.numeric.ARGBType;
@@ -72,8 +73,8 @@ import org.embl.mobie.lib.volume.ImageVolumeViewer;
 import org.embl.mobie.lib.volume.SegmentVolumeViewer;
 import org.embl.mobie.lib.volume.UniverseManager;
 import org.embl.mobie.ui.MoBIEWindowManager;
-import sc.fiji.bdvpg.scijava.services.SourceAndConverterService;
-import sc.fiji.bdvpg.services.SourceAndConverterServices;
+import sc.fiji.bdvpg.scijava.service.SourceService;
+import sc.fiji.bdvpg.service.SourceServices;
 
 import javax.annotation.Nullable;
 import javax.swing.*;
@@ -89,7 +90,7 @@ public class ViewManager
 	private final MoBIE moBIE;
 	private final UserInterface userInterface;
 	private final SliceViewer sliceViewer;
-	private final SourceAndConverterService sacService;
+	private final SourceService sacService;
 	private List< Display > currentDisplays;
 	private final UniverseManager universeManager;
 	private final BigVolumeBrowserMoBIE bigVolumeBrowser;
@@ -108,7 +109,7 @@ public class ViewManager
         additionalViewsLoader = new AdditionalViewsLoader( moBIE );
 		viewSaver = new ViewSaver( moBIE );
 		viewDeleter = new ViewDeleter( moBIE );
-		sacService = ( SourceAndConverterService ) SourceAndConverterServices.getSourceAndConverterService();
+		sacService = ( SourceService ) SourceServices.getSourceService();
 	}
 
 	private static BigVolumeBrowserMoBIE getBigVolumeBrowserMoBIE()
@@ -806,6 +807,7 @@ public class ViewManager
 		if ( resolution3dView != null ) {
 			display.segmentVolumeViewer.setVoxelSpacing( ArrayUtils.toPrimitive( display.getResolution3dView() ) );
 		}
+		display.segmentVolumeViewer.configureMeshCache( display.getName(), MoBIEHelper.getMeshCacheDir() );
 		display.segmentVolumeViewer.showSegments( display.showSelectedSegmentsIn3d(), true );
 		display.coloringModel.listeners().add( display.segmentVolumeViewer );
 		display.selectionModel.listeners().add( display.segmentVolumeViewer );
@@ -881,7 +883,7 @@ public class ViewManager
 		userInterface.close();
 		// see also https://github.com/mobie/mobie-viewer-fiji/issues/857
 		IJ.log( "Clearing SpimData cache..." );
-		DataStore.clearSpimDataCache();
+		DataStore.clearImageDataCache();
 	}
 
 	public BigVolumeBrowserMoBIE getBigVolumeViewer()

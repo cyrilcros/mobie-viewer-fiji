@@ -37,6 +37,7 @@ import org.embl.mobie.lib.annotation.AnnotatedRegion;
 import bdv.viewer.Source;
 import org.embl.mobie.lib.data.DataStore;
 import org.embl.mobie.lib.util.MoBIEHelper;
+import org.embl.mobie.lib.volume.GltfMeshExporter;
 import org.embl.mobie.lib.volume.MeshCache;
 import org.embl.mobie.lib.volume.SegmentMeshCacher;
 import org.embl.mobie.lib.image.Image;
@@ -74,6 +75,7 @@ import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
+import java.io.File;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashSet;
@@ -276,6 +278,7 @@ public class TableView< A extends Annotation > implements SelectionListener< A >
 		if ( display instanceof SegmentationDisplay )
 		{
 			menu.add( createCacheSegmentMeshesMenuItem() );
+			menu.add( createExportSegmentMeshesAsGltfMenuItem() );
 		}
 
 		return menu;
@@ -286,6 +289,42 @@ public class TableView< A extends Annotation > implements SelectionListener< A >
 		final JMenuItem menuItem = new JMenuItem( "Cache segment meshes..." );
 		menuItem.addActionListener( e -> showCacheSegmentMeshesDialog() );
 		return menuItem;
+	}
+
+	private JMenuItem createExportSegmentMeshesAsGltfMenuItem()
+	{
+		final JMenuItem menuItem = new JMenuItem( "Export segment meshes as glTF..." );
+		menuItem.addActionListener( e -> showExportSegmentMeshesAsGltfDialog() );
+		return menuItem;
+	}
+
+	private void showExportSegmentMeshesAsGltfDialog()
+	{
+		final String defaultPath = System.getProperty( "user.home" ) + File.separator + display.getName() + ".gltf";
+		final GenericDialog dialog = new GenericDialog( "Export segment meshes as glTF" );
+		dialog.addStringField( "Output .gltf file", defaultPath, 50 );
+		dialog.addMessage( "Writes one glTF mesh per segment plus an external .bin buffer to the given path.\nThe result can be opened in Blender, BigVolumeViewer and other glTF tools." );
+		dialog.showDialog();
+		if ( dialog.wasCanceled() )
+			return;
+
+		final File outputFile = new File( dialog.getNextString() );
+		new Thread( () -> exportSegmentMeshesAsGltf( outputFile ) ).start();
+	}
+
+	@SuppressWarnings( "unchecked" )
+	private void exportSegmentMeshesAsGltf( File outputFile )
+	{
+		try
+		{
+			final int exported = GltfMeshExporter.export( ( SegmentationDisplay ) display, outputFile );
+			IJ.showMessage( "Done. Exported " + exported + " segment meshes to:\n" + outputFile.getAbsolutePath() );
+		}
+		catch ( Exception e )
+		{
+			e.printStackTrace();
+			IJ.showMessage( "glTF export failed: " + e.getMessage() );
+		}
 	}
 
 	private void showCacheSegmentMeshesDialog()

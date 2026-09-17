@@ -106,6 +106,7 @@
         <allowedDuplicateClasses>${scijava.allowedDuplicateClasses},org.relaxng.*,sun.*,com.sun.*,sun.rmi.*,com.sun.jdi.*,sun.jvmstat.*,sun.applet.*,com.sun.xml.*,com.sun.tools.*,sun.tools.*,com.sun.istack.*,shaded.parquet.it.unimi.dsi.fastutil.*,javax.xml.bind.*,com.sun.xml.bind.*,com.sun.xml.txw2.*,com.sun.codemodel.*</allowedDuplicateClasses>
 
         <mobie-io.version>5.0.0-SNAPSHOT</mobie-io.version>
+        <jgltf.version>3.0.1</jgltf.version>
 
         <!--
             Temporary: keep commented while elastix BSpline support is vendored in MoBIE.
@@ -152,6 +153,17 @@
             <groupId>org.embl.mobie</groupId>
             <artifactId>mobie-io</artifactId>
             <version>${mobie-io.version}</version>
+        </dependency>
+        <dependency>
+            <!-- glTF export of segment meshes (interoperable with Blender, BigVolumeViewer, ...) -->
+            <groupId>de.javagl</groupId>
+            <artifactId>jgltf-model</artifactId>
+            <version>${jgltf.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>de.javagl</groupId>
+            <artifactId>jgltf-model-builder</artifactId>
+            <version>${jgltf.version}</version>
         </dependency>
         <dependency>
             <groupId>ome.zarr</groupId>

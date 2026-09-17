@@ -49,6 +49,7 @@ import net.imglib2.type.numeric.ARGBType;
 import org.jogamp.java3d.Bounds;
 import org.jogamp.java3d.View;
 import org.jogamp.vecmath.Color3f;
+import org.jogamp.vecmath.Point3f;
 
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
@@ -391,6 +392,38 @@ public class SegmentVolumeViewer< S extends Segment > implements ColoringListene
 				return image.getSourcePair().getSource();
 
 		throw new UnsupportedOperationException( "An image segment from " + segment.imageId() + " did not have a corresponding image source."  );
+	}
+
+	/**
+	 * Computes (or loads from the mesh cache) the smoothed mesh of the given
+	 * segment and returns it as a flat float array of vertex coordinates
+	 * (x0,y0,z0, x1,y1,z1, ...), i.e. as a triangle soup.
+	 * <p>
+	 * Returns {@code null} if the mesh could not be created; the reason is
+	 * logged.
+	 */
+	public synchronized float[] getSmoothedMeshVertices( S segment )
+	{
+		try
+		{
+			final Source< AnnotationType< S > > source = getSource( segment );
+			final CustomTriangleMesh mesh = meshCreator.createSmoothCustomTriangleMesh( segment, voxelSpacing, false, source );
+			final List< Point3f > points = mesh.getMesh();
+			final float[] vertices = new float[ points.size() * 3 ];
+			int i = 0;
+			for ( Point3f point : points )
+			{
+				vertices[ i++ ] = point.x;
+				vertices[ i++ ] = point.y;
+				vertices[ i++ ] = point.z;
+			}
+			return vertices;
+		}
+		catch ( Exception e )
+		{
+			IJ.log( "[MoBIE] Could not create mesh for segment " + segment.label() + ": " + e.getMessage() );
+			return null;
+		}
 	}
 
 	private synchronized void removeSegment( S segment )

@@ -58,6 +58,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.HashSet;
+import java.util.function.Consumer;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -102,6 +103,22 @@ public class SegmentVolumeViewer< S extends Segment > implements ColoringListene
 	public static void setMaxLoggedRenderFailures( final int maxLoggedRenderFailures )
 	{
 		SegmentVolumeViewer.maxLoggedRenderFailures = maxLoggedRenderFailures;
+	}
+
+	/**
+	 * Sink for 3D render progress messages. Defaults to {@link IJ#log(String)};
+	 * a diagnostic runner can redirect it to also print to the console.
+	 */
+	private static Consumer< String > progressLogger = IJ::log;
+
+	public static void setProgressLogger( final Consumer< String > progressLogger )
+	{
+		SegmentVolumeViewer.progressLogger = progressLogger;
+	}
+
+	private static void logProgress( final String message )
+	{
+		progressLogger.accept( message );
 	}
 
 	public SegmentVolumeViewer(
@@ -248,7 +265,7 @@ public class SegmentVolumeViewer< S extends Segment > implements ColoringListene
 		final int total = pending.size();
 		final ArrayList< Future< ? > > futures = ThreadHelper.getFutures();
 		final AtomicInteger failures = new AtomicInteger( 0 );
-		final int maxLoggedFailures = 10;
+		final int maxLoggedFailures = maxLoggedRenderFailures;
 		final AtomicInteger noVoxelSegments = new AtomicInteger( 0 );
 
 		// Update the status bar on a time basis rather than on a fixed number
@@ -284,7 +301,7 @@ public class SegmentVolumeViewer< S extends Segment > implements ColoringListene
 						if ( failureCount <= maxLoggedFailures )
 						{
 							final Throwable cause = e.getCause();
-							IJ.log( "[MoBIE] Could not pre-render mesh for segment " + segment.label() + ": " + e.getMessage()
+							logProgress( "[MoBIE] Could not pre-render mesh for segment " + segment.label() + ": " + e.getMessage()
 									+ ( cause != null ? " (cause: " + cause.getMessage() + ")" : "" ) );
 						}
 					}
@@ -348,11 +365,19 @@ public class SegmentVolumeViewer< S extends Segment > implements ColoringListene
 
 		new Thread( () ->
 		{
-			if ( universe == null )
-				return;
-			universe.setAutoAdjustView( true );
-			updateSelectedSegments( recomputeMeshes );
-			removeUnselectedSegments();
+			try
+			{
+				if ( universe == null )
+					return;
+				universe.setAutoAdjustView( true );
+				updateSelectedSegments( recomputeMeshes );
+				removeUnselectedSegments();
+			}
+			catch ( Throwable t )
+			{
+				logProgress( "[MoBIE] 3D render aborted: " + t );
+				t.printStackTrace();
+			}
 		}).start();
 	}
 
@@ -383,18 +408,49 @@ public class SegmentVolumeViewer< S extends Segment > implements ColoringListene
 		final Set< S > selected = selectionModel.getSelected();
 		final AtomicInteger failures = new AtomicInteger( 0 );
 		int noVoxels = 0;
+		int rendered = 0;
+		int alreadyShown = 0;
+		int index = 0;
+		final int total = selected.size();
+
+		logProgress( "[MoBIE] 3D render: " + total + " selected segment(s); starting." );
 
 		for ( S segment : selected )
 		{
+			index++;
+
 			if ( segment.timePoint() == null || segment.timePoint() == currentTimePoint )
 			{
 				if ( recomputeMeshes ) removeSegment( segment );
 
-				if ( ! segmentToContent.containsKey( segment ) )
+				if ( segmentToContent.containsKey( segment ) )
 				{
-					final SegmentRenderResult result = renderSegment( segment, recomputeMeshes, failures );
-					if ( result == SegmentRenderResult.SKIPPED_NO_VOXELS )
+					alreadyShown++;
+					continue;
+				}
+
+				// Log the segment *before* rendering it, so a hang identifies
+				// the exact trace that blocked the render.
+				logProgress( "[MoBIE] 3D render [" + index + "/" + total + "] label " + segment.label()
+						+ " (" + segment.imageId() + ") ..." );
+
+				final long t0 = System.currentTimeMillis();
+				final SegmentRenderResult result = renderSegment( segment, recomputeMeshes, failures );
+				final long dt = System.currentTimeMillis() - t0;
+
+				switch ( result )
+				{
+					case RENDERED:
+						rendered++;
+						logProgress( "[MoBIE] 3D render [" + index + "/" + total + "] label " + segment.label() + " done in " + dt + " ms" );
+						break;
+					case SKIPPED_NO_VOXELS:
 						noVoxels++;
+						logProgress( "[MoBIE] 3D render [" + index + "/" + total + "] label " + segment.label() + " skipped: no voxels" );
+						break;
+					case FAILED:
+						logProgress( "[MoBIE] 3D render [" + index + "/" + total + "] label " + segment.label() + " FAILED" );
+						break;
 				}
 			}
 			else // segment is of another time point
@@ -403,11 +459,8 @@ public class SegmentVolumeViewer< S extends Segment > implements ColoringListene
 			}
 		}
 
-		if ( noVoxels > 0 )
-			IJ.log( "[MoBIE] " + noVoxels + " selected segment(s) have no voxels in the image volume and were skipped." );
-
-		if ( failures.get() > 0 )
-			IJ.log( "[MoBIE] " + failures.get() + " of " + selected.size() + " selected segments could not be rendered in 3D." );
+		logProgress( "[MoBIE] 3D render: finished. rendered=" + rendered + ", alreadyShown=" + alreadyShown
+				+ ", noVoxels=" + noVoxels + ", failed=" + failures.get() + ", total=" + total );
 	}
 
 	/**
@@ -430,7 +483,7 @@ public class SegmentVolumeViewer< S extends Segment > implements ColoringListene
 			addSegmentMeshToUniverse( segment, mesh );
 			return SegmentRenderResult.RENDERED;
 		}
-		catch ( Exception e )
+		catch ( Throwable e )
 		{
 			if ( noVoxelsInImage( e ) )
 			{
@@ -442,7 +495,7 @@ public class SegmentVolumeViewer< S extends Segment > implements ColoringListene
 			if ( failureCount <= maxLoggedRenderFailures )
 			{
 				final Throwable cause = e.getCause();
-				IJ.log( "[MoBIE] Could not render segment " + segment.label() + " in 3D: " + e.getMessage()
+				logProgress( "[MoBIE] Could not render segment " + segment.label() + " in 3D: " + e.getMessage()
 						+ ( cause != null ? " (cause: " + cause.getMessage() + ")" : "" ) );
 			}
 			return SegmentRenderResult.FAILED;

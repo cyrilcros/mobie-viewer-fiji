@@ -1,6 +1,7 @@
 package examples;
 
 import net.imagej.ImageJ;
+import ij.IJ;
 import org.embl.mobie.MoBIE;
 import org.embl.mobie.MoBIESettings;
 import org.embl.mobie.lib.annotation.AnnotatedSegment;
@@ -47,6 +48,15 @@ public class OpenDavidTraces
 		imageJ.ui().showUI();
 		final MoBIE moBIE = new MoBIE( PROJECT, new MoBIESettings().gitProjectBranch( branch ) );
 		final ViewManager viewManager = moBIE.getViewManager();
+
+		// Mirror the viewer's per-trace render progress to the console, so a
+		// stall or silent stop immediately shows the trace that blocked it.
+		SegmentVolumeViewer.setProgressLogger( message ->
+		{
+			IJ.log( message );
+			System.out.println( message );
+			System.out.flush();
+		} );
 
 		// Resolve and initialise only the requested trace sources.
 		final List< DataSource > dataSources = new ArrayList<>();

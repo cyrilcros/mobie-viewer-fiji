@@ -98,7 +98,14 @@ public class OpenDavidTraces
 		// Report every failing trace, not just the first 10.
 		SegmentVolumeViewer.setMaxLoggedRenderFailures( Integer.MAX_VALUE );
 
-		log( "Rendering all selected traces in the 3D volume ..." );
+		// A malformed/oversized trace can spin inside mesh creation (flood-fill /
+		// marching cubes / smoothing). Cap it, so it is logged and skipped instead
+		// of stalling the whole render.
+		final long meshTimeoutMillis = 30_000;
+		SegmentVolumeViewer.setMeshCreationTimeoutMillis( meshTimeoutMillis );
+
+		log( "Rendering all selected traces in the 3D volume (mesh timeout "
+				+ ( meshTimeoutMillis / 1000 ) + " s/trace) ..." );
 		display.segmentVolumeViewer.showSegments( true, true );
 
 		log( "" );

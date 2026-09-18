@@ -63,7 +63,12 @@ import java.util.function.Consumer;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -121,6 +126,26 @@ public class SegmentVolumeViewer< S extends Segment > implements ColoringListene
 	{
 		progressLogger.accept( message );
 	}
+
+	/**
+	 * Timeout for building one segment mesh. An oversized or malformed trace can
+	 * spin inside flood-fill / marching cubes / smoothing without ever throwing,
+	 * which used to stall the whole render silently. On timeout the segment is
+	 * reported and skipped, and the render continues.
+	 */
+	private static long meshCreationTimeoutMillis = 60_000;
+
+	public static void setMeshCreationTimeoutMillis( final long millis )
+	{
+		meshCreationTimeoutMillis = millis;
+	}
+
+	private static final ExecutorService MESH_EXECUTOR = Executors.newCachedThreadPool( r ->
+	{
+		final Thread t = new Thread( r, "MoBIE-mesh-creation" );
+		t.setDaemon( true );
+		return t;
+	} );
 
 	public SegmentVolumeViewer(
 			final SelectionModel< S > selectionModel,
@@ -493,7 +518,7 @@ public class SegmentVolumeViewer< S extends Segment > implements ColoringListene
 		try
 		{
 			final Source< AnnotationType< S > > source = getSource( segment );
-			final CustomTriangleMesh mesh = meshCreator.createSmoothCustomTriangleMesh( segment, voxelSpacing, recomputeMeshes, source );
+			final CustomTriangleMesh mesh = createMeshWithTimeout( segment, recomputeMeshes, source );
 			final String stats = meshStats( mesh );
 			mesh.setColor( getColor3f( segment ) );
 			addSegmentMeshToUniverse( segment, mesh );
@@ -515,6 +540,40 @@ public class SegmentVolumeViewer< S extends Segment > implements ColoringListene
 						+ ( cause != null ? " (cause: " + cause.getMessage() + ")" : "" ) );
 			}
 			return new RenderOutcome( SegmentRenderResult.FAILED, null );
+		}
+	}
+
+	/**
+	 * Builds one segment mesh on a worker thread with {@link #meshCreationTimeoutMillis}.
+	 * A hang (oversized/leaky label) is turned into a runtime exception naming
+	 * the segment, so it is logged and skipped instead of stalling the render.
+	 */
+	private CustomTriangleMesh createMeshWithTimeout( S segment, boolean recomputeMeshes, Source< AnnotationType< S > > source )
+	{
+		final Future< CustomTriangleMesh > future = MESH_EXECUTOR.submit(
+				() -> meshCreator.createSmoothCustomTriangleMesh( segment, voxelSpacing, recomputeMeshes, source ) );
+
+		try
+		{
+			return future.get( meshCreationTimeoutMillis, TimeUnit.MILLISECONDS );
+		}
+		catch ( final TimeoutException te )
+		{
+			future.cancel( true );
+			throw new RuntimeException( "Mesh creation for segment " + segment.label() + " timed out after "
+					+ ( meshCreationTimeoutMillis / 1000 ) + " s (likely an oversized/malformed trace)", te );
+		}
+		catch ( final ExecutionException ee )
+		{
+			final Throwable cause = ee.getCause();
+			if ( cause instanceof RuntimeException ) throw ( RuntimeException ) cause;
+			if ( cause instanceof Error ) throw ( Error ) cause;
+			throw new RuntimeException( cause );
+		}
+		catch ( final InterruptedException ie )
+		{
+			Thread.currentThread().interrupt();
+			throw new RuntimeException( "Mesh creation interrupted for segment " + segment.label(), ie );
 		}
 	}
 

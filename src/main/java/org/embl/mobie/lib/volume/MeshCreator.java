@@ -57,12 +57,28 @@ public class MeshCreator< S extends Segment >
 {
 	private final int meshSmoothingIterations;
 	private final double maxNumSegmentVoxels;
+
+	/**
+	 * Hard cap on the number of voxels in a region we are willing to mesh.
+	 * The auto-resolution level is chosen so its bounding box is at most
+	 * {@link #maxNumSegmentVoxels}, but if the label is absent there (e.g. erased
+	 * by a max-pool pyramid) the fallback used to step down to the finest level
+	 * and march a huge region, hanging the render. This caps that fallback.
+	 */
+	private long maxMeshVoxels;
+
 	private MeshCache meshCache;
 
 	public MeshCreator( int meshSmoothingIterations, double maxNumSegmentVoxels )
 	{
 		this.meshSmoothingIterations = meshSmoothingIterations;
 		this.maxNumSegmentVoxels = maxNumSegmentVoxels;
+		this.maxMeshVoxels = ( long ) ( 8 * maxNumSegmentVoxels );
+	}
+
+	public void setMaxMeshVoxels( final long maxMeshVoxels )
+	{
+		this.maxMeshVoxels = maxMeshVoxels;
 	}
 
 	public void setMeshCache( MeshCache meshCache )
@@ -103,9 +119,15 @@ public class MeshCreator< S extends Segment >
 			final FloodFill floodFill = new FloodFill(
 					rai,
 					new DiamondShape( 1 ),
-					1000 * 1000 * 1000L );
+					maxMeshVoxels );
 
 			floodFill.run( voxelPositionInSource );
+
+			if ( floodFill.isMaxRegionSizeReached() )
+				throw new RuntimeException( "Segment " + segment.label() + ": connected region exceeds "
+						+ maxMeshVoxels + " voxels at level " + renderingLevel
+						+ "; refusing to mesh an oversized/leaky label." );
+
 			final RandomAccessibleInterval< BitType > mask = floodFill.getCroppedRegionMask();
 
 			final FinalRealInterval realBounds = sourceTransform.estimateBounds( mask );
@@ -128,8 +150,14 @@ public class MeshCreator< S extends Segment >
 			if ( ! Intervals.contains( rai, voxelBounds ) )
 				voxelBounds = Intervals.intersect( rai, voxelBounds );
 
-			if ( Intervals.numElements( voxelBounds ) == 0 )
+			final long numVoxelsInBounds = Intervals.numElements( voxelBounds );
+			if ( numVoxelsInBounds == 0 )
 				continue; // outside of the image at this level
+
+			if ( numVoxelsInBounds > maxMeshVoxels )
+				throw new RuntimeException( "Segment " + segment.label() + ": bounding box at level " + level
+						+ " is " + numVoxelsInBounds + " voxels (> limit " + maxMeshVoxels
+						+ "); refusing to mesh (label absent at coarser levels and region too large)." );
 
 			final AnnotationType< S > type = source.getType();
 			final AnnotationType< S > variable = type.createVariable();

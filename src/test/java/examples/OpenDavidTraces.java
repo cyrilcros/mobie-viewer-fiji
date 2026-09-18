@@ -103,8 +103,9 @@ public class OpenDavidTraces
 
 		log( "" );
 		log( "Done. MoBIE is now rendering the traces on demand." );
-		log( "Watch for '[MoBIE] Could not render segment <label> in 3D: ...' in the" );
-		log( "ImageJ Log window (Plugins > Log) and on this console." );
+		log( "Each '[MoBIE] 3D render [i/N] label <L> done ...' line reports the mesh size" );
+		log( "(vertices, volume, extent) so an oversized/malformed trace stands out." );
+		log( "Failures appear as '[MoBIE] Could not render segment <label> in 3D: ...'." );
 	}
 
 	private static void log( final String message )

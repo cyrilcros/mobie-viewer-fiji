@@ -49,6 +49,7 @@ import net.imglib2.type.numeric.ARGBType;
 import org.jogamp.java3d.Bounds;
 import org.jogamp.java3d.View;
 import org.jogamp.vecmath.Color3f;
+import org.jogamp.vecmath.Point3f;
 
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
@@ -403,6 +404,19 @@ public class SegmentVolumeViewer< S extends Segment > implements ColoringListene
 		FAILED
 	}
 
+	/** Result of rendering one segment, plus its mesh size when it rendered. */
+	private static final class RenderOutcome
+	{
+		final SegmentRenderResult result;
+		final String stats;
+
+		RenderOutcome( final SegmentRenderResult result, final String stats )
+		{
+			this.result = result;
+			this.stats = stats;
+		}
+	}
+
 	private synchronized void updateSelectedSegments( boolean recomputeMeshes )
 	{
 		final Set< S > selected = selectionModel.getSelected();
@@ -435,14 +449,15 @@ public class SegmentVolumeViewer< S extends Segment > implements ColoringListene
 						+ " (" + segment.imageId() + ") ..." );
 
 				final long t0 = System.currentTimeMillis();
-				final SegmentRenderResult result = renderSegment( segment, recomputeMeshes, failures );
+				final RenderOutcome outcome = renderSegment( segment, recomputeMeshes, failures );
 				final long dt = System.currentTimeMillis() - t0;
 
-				switch ( result )
+				switch ( outcome.result )
 				{
 					case RENDERED:
 						rendered++;
-						logProgress( "[MoBIE] 3D render [" + index + "/" + total + "] label " + segment.label() + " done in " + dt + " ms" );
+						logProgress( "[MoBIE] 3D render [" + index + "/" + total + "] label " + segment.label() + " done in " + dt + " ms"
+								+ ( outcome.stats != null ? " (" + outcome.stats + ")" : "" ) );
 						break;
 					case SKIPPED_NO_VOXELS:
 						noVoxels++;
@@ -473,22 +488,23 @@ public class SegmentVolumeViewer< S extends Segment > implements ColoringListene
 	 *
 	 * @return how the segment was handled
 	 */
-	private SegmentRenderResult renderSegment( S segment, boolean recomputeMeshes, AtomicInteger failures )
+	private RenderOutcome renderSegment( S segment, boolean recomputeMeshes, AtomicInteger failures )
 	{
 		try
 		{
 			final Source< AnnotationType< S > > source = getSource( segment );
 			final CustomTriangleMesh mesh = meshCreator.createSmoothCustomTriangleMesh( segment, voxelSpacing, recomputeMeshes, source );
+			final String stats = meshStats( mesh );
 			mesh.setColor( getColor3f( segment ) );
 			addSegmentMeshToUniverse( segment, mesh );
-			return SegmentRenderResult.RENDERED;
+			return new RenderOutcome( SegmentRenderResult.RENDERED, stats );
 		}
 		catch ( Throwable e )
 		{
 			if ( noVoxelsInImage( e ) )
 			{
 				// benign: the label is absent from the volume at all levels
-				return SegmentRenderResult.SKIPPED_NO_VOXELS;
+				return new RenderOutcome( SegmentRenderResult.SKIPPED_NO_VOXELS, null );
 			}
 
 			final int failureCount = failures.incrementAndGet();
@@ -498,8 +514,32 @@ public class SegmentVolumeViewer< S extends Segment > implements ColoringListene
 				logProgress( "[MoBIE] Could not render segment " + segment.label() + " in 3D: " + e.getMessage()
 						+ ( cause != null ? " (cause: " + cause.getMessage() + ")" : "" ) );
 			}
-			return SegmentRenderResult.FAILED;
+			return new RenderOutcome( SegmentRenderResult.FAILED, null );
 		}
+	}
+
+	/**
+	 * Human-readable size of a rendered mesh: vertex count, enclosed volume and
+	 * bounding-box extent. Used to spot malformed or oversized traces at a glance.
+	 */
+	private static String meshStats( final CustomTriangleMesh mesh )
+	{
+		final List< Point3f > points = mesh.getMesh();
+		if ( points == null || points.isEmpty() )
+			return "vertices=0";
+
+		float minX = Float.MAX_VALUE, minY = Float.MAX_VALUE, minZ = Float.MAX_VALUE;
+		float maxX = -Float.MAX_VALUE, maxY = -Float.MAX_VALUE, maxZ = -Float.MAX_VALUE;
+		for ( final Point3f p : points )
+		{
+			minX = Math.min( minX, p.x ); maxX = Math.max( maxX, p.x );
+			minY = Math.min( minY, p.y ); maxY = Math.max( maxY, p.y );
+			minZ = Math.min( minZ, p.z ); maxZ = Math.max( maxZ, p.z );
+		}
+
+		return "vertices=" + points.size()
+				+ ", volume=" + String.format( "%.1f", mesh.getVolume() )
+				+ ", extent=" + String.format( "%.1f x %.1f x %.1f", maxX - minX, maxY - minY, maxZ - minZ );
 	}
 
 	private Source< AnnotationType< S > > getSource( S segment )

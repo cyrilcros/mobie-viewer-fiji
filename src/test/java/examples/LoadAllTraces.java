@@ -37,7 +37,12 @@ import java.util.List;
  *   <li>report path (default {@code trace_load_report.tsv})</li>
  * </ol>
  * Errors are contained per source and per trace: one bad trace never aborts
- * the run. Outcomes are written to the TSV report and printed to stdout.
+ * the run. Progress goes to stdout (flushed) and outcomes to the TSV report.
+ * <p>
+ * Note: MoBIE and BDV-Playground also write to the ImageJ Log window
+ * ({@code Plugins > Log}); this runner mirrors what matters to stdout. The
+ * {@code src/test/resources/logback-test.xml} keeps Logback at WARN so the
+ * console is not drowned in DEBUG output.
  */
 public class LoadAllTraces
 {
@@ -45,6 +50,7 @@ public class LoadAllTraces
 
 	private static final int MESH_SMOOTHING_ITERATIONS = 5;
 	private static final long MAX_NUM_SEGMENT_VOXELS = 100L * 100 * 100;
+	private static final int PROGRESS_EVERY = 50;
 
 	public static void main( String[] args ) throws Exception
 	{
@@ -52,11 +58,20 @@ public class LoadAllTraces
 		final String nameFilter = args.length > 1 ? args[ 1 ] : "trace";
 		final Path report = Paths.get( args.length > 2 ? args[ 2 ] : "trace_load_report.tsv" );
 
+		log( "================================================================" );
+		log( " LoadAllTraces" );
+		log( "   project: " + PROJECT );
+		log( "   branch:  " + branch );
+		log( "   filter:  " + nameFilter );
+		log( "   report:  " + report.toAbsolutePath() );
+		log( "================================================================" );
+
 		final ImageJ imageJ = new ImageJ();
 		imageJ.ui().showUI();
 
-		System.out.println( "Opening " + PROJECT + " @ branch: " + branch );
+		log( "[1/3] Opening project ..." );
 		final MoBIE moBIE = new MoBIE( PROJECT, new MoBIESettings().gitProjectBranch( branch ) );
+		log( "      project opened." );
 
 		final List< SegmentationDataSource > traceSources = new ArrayList<>();
 		for ( final DataSource ds : moBIE.getDataset().sources().values() )
@@ -67,9 +82,9 @@ public class LoadAllTraces
 		}
 		traceSources.sort( Comparator.comparing( DataSource::getName ) );
 
-		System.out.println( "Found " + traceSources.size() + " source(s) matching '" + nameFilter + "':" );
+		log( "[2/3] Found " + traceSources.size() + " source(s) matching '" + nameFilter + "':" );
 		for ( final DataSource ds : traceSources )
-			System.out.println( "  - " + ds.getName() );
+			log( "        - " + ds.getName() );
 
 		final MeshCreator< AnnotatedSegment > meshCreator =
 				new MeshCreator<>( MESH_SMOOTHING_ITERATIONS, MAX_NUM_SEGMENT_VOXELS );
@@ -83,12 +98,28 @@ public class LoadAllTraces
 		{
 			out.println( "source\tlabel\tstatus\treason" );
 
-			for ( final SegmentationDataSource ds : traceSources )
+			for ( int s = 0; s < traceSources.size(); s++ )
 			{
-				System.out.println( "\n=== " + ds.getName() + " ===" );
+				final SegmentationDataSource ds = traceSources.get( s );
+				log( "" );
+				log( "[3/3] (" + ( s + 1 ) + "/" + traceSources.size() + ") source " + ds.getName() );
+
+				if ( ds.getTableData() == null )
+				{
+					log( "      WARNING: source has no table data; skipping." );
+					out.println( ds.getName() + "\t-\tNO_TABLE\tno table data" );
+					continue;
+				}
+
 				final long t0 = System.currentTimeMillis();
+				int sourceTotal = 0;
+				int sourceRendered = 0;
+				int sourceSkipped = 0;
+				int sourceFailed = 0;
+
 				try
 				{
+					log( "      loading table + image ..." );
 					ds.preInit( true );
 					moBIE.initDataSources( Collections.singletonList( ( DataSource ) ds ) );
 
@@ -109,16 +140,21 @@ public class LoadAllTraces
 					final AnnData< ? > annData = image.getAnnData();
 					final ArrayList< ? > traces = annData.getTable().annotations();
 
-					System.out.println( "  traces: " + traces.size() + "  finest spacing: " + Arrays.toString( spacing ) );
+					log( "      loaded in " + ( System.currentTimeMillis() - t0 ) + " ms"
+							+ " | traces: " + traces.size()
+							+ " | finest spacing: " + Arrays.toString( spacing ) );
+					log( "      rendering meshes ..." );
 
 					for ( final Object annotation : traces )
 					{
 						total++;
+						sourceTotal++;
 						final AnnotatedSegment trace = ( AnnotatedSegment ) annotation;
 						try
 						{
 							meshCreator.createSmoothCustomTriangleMesh( trace, spacing, true, source );
 							rendered++;
+							sourceRendered++;
 						}
 						catch ( final Exception e )
 						{
@@ -126,34 +162,52 @@ public class LoadAllTraces
 							if ( isNoVoxels( e ) )
 							{
 								skippedNoVoxels++;
+								sourceSkipped++;
 								out.println( ds.getName() + "\t" + trace.label() + "\tSKIP_NO_VOXELS\t" + clean( reason ) );
 							}
 							else
 							{
 								failed++;
+								sourceFailed++;
 								out.println( ds.getName() + "\t" + trace.label() + "\tFAILED\t" + clean( reason ) );
-								System.out.println( "  [FAIL] label " + trace.label() + ": " + reason );
+								out.flush();
+								log( "      [FAIL] label " + trace.label() + ": " + reason );
 							}
 						}
+
+						if ( sourceTotal % PROGRESS_EVERY == 0 )
+							log( "      ... " + sourceTotal + "/" + traces.size()
+									+ " (ok=" + sourceRendered + ", skip=" + sourceSkipped + ", fail=" + sourceFailed + ")" );
 					}
 				}
 				catch ( final Throwable t )
 				{
 					failed++;
+					sourceFailed++;
 					out.println( ds.getName() + "\t-\tSOURCE_FAILED\t" + clean( rootReason( t ) ) );
-					System.out.println( "  [SOURCE FAILED] " + rootReason( t ) );
+					out.flush();
+					log( "      [SOURCE FAILED] " + rootReason( t ) );
 				}
-				System.out.println( "  done in " + ( System.currentTimeMillis() - t0 ) + " ms" );
+
+				log( "      done: " + sourceTotal + " traces in " + ( System.currentTimeMillis() - t0 ) + " ms"
+						+ " (ok=" + sourceRendered + ", skip=" + sourceSkipped + ", fail=" + sourceFailed + ")" );
 			}
 		}
 
-		System.out.println( "\n================ SUMMARY ================" );
-		System.out.println( "sources:           " + traceSources.size() );
-		System.out.println( "traces:            " + total );
-		System.out.println( "  rendered:        " + rendered );
-		System.out.println( "  no voxels (skip): " + skippedNoVoxels );
-		System.out.println( "  failed:          " + failed );
-		System.out.println( "report:            " + report.toAbsolutePath() );
+		log( "" );
+		log( "================ SUMMARY ================" );
+		log( "sources:           " + traceSources.size() );
+		log( "traces:            " + total );
+		log( "  rendered:        " + rendered );
+		log( "  no voxels (skip): " + skippedNoVoxels );
+		log( "  failed:          " + failed );
+		log( "report:            " + report.toAbsolutePath() );
+	}
+
+	private static void log( final String message )
+	{
+		System.out.println( message );
+		System.out.flush();
 	}
 
 	private static boolean isNoVoxels( final Throwable t )

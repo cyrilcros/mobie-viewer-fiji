@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Quiet Logback for IntelliJ / test runs.
+
+  Without this file Logback defaults to DEBUG, so BDV-Playground logs a wall of
+  DEBUG lines to the console and drowns out the actual program output. Root is
+  WARN here; raise a specific logger to INFO/DEBUG when you need its detail.
+-->
+<configuration>
+	<appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+		<encoder>
+			<pattern>%d{HH:mm:ss.SSS} %-5level %logger{24} - %msg%n</pattern>
+		</encoder>
+	</appender>
+
+	<root level="WARN">
+		<appender-ref ref="CONSOLE"/>
+	</root>
+</configuration>

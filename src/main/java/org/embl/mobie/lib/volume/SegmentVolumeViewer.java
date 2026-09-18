@@ -92,7 +92,17 @@ public class SegmentVolumeViewer< S extends Segment > implements ColoringListene
 	private List< VisibilityListener > listeners = new ArrayList<>(  );
 	private ImageWindow3D window;
 	private Image3DUniverse universe;
-	private static final int MAX_LOGGED_RENDER_FAILURES = 10;
+	/**
+	 * Maximum number of render failures logged per selection. Raise it via
+	 * {@link #setMaxLoggedRenderFailures(int)} for diagnostic runs that need
+	 * the full list of failing segments.
+	 */
+	private static int maxLoggedRenderFailures = 10;
+
+	public static void setMaxLoggedRenderFailures( final int maxLoggedRenderFailures )
+	{
+		SegmentVolumeViewer.maxLoggedRenderFailures = maxLoggedRenderFailures;
+	}
 
 	public SegmentVolumeViewer(
 			final SelectionModel< S > selectionModel,
@@ -404,7 +414,7 @@ public class SegmentVolumeViewer< S extends Segment > implements ColoringListene
 	 * Renders a single segment into the 3D universe.
 	 * <p>
 	 * Failures are contained to this segment: the exception is classified,
-	 * logged (capped at {@link #MAX_LOGGED_RENDER_FAILURES}) and the render
+	 * logged (capped at {@link #maxLoggedRenderFailures}) and the render
 	 * continues with the remaining segments, so that one bad segment cannot
 	 * abort the whole 3D view.
 	 *
@@ -429,7 +439,7 @@ public class SegmentVolumeViewer< S extends Segment > implements ColoringListene
 			}
 
 			final int failureCount = failures.incrementAndGet();
-			if ( failureCount <= MAX_LOGGED_RENDER_FAILURES )
+			if ( failureCount <= maxLoggedRenderFailures )
 			{
 				final Throwable cause = e.getCause();
 				IJ.log( "[MoBIE] Could not render segment " + segment.label() + " in 3D: " + e.getMessage()

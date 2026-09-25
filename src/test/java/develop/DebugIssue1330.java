@@ -26,20 +26,34 @@
  * POSSIBILITY OF SUCH DAMAGE.
  * #L%
  */
-package debug;
+package develop;
 
+import ij.IJ;
 import net.imagej.ImageJ;
-import org.embl.mobie.command.open.OpenMultipleImagesAndLabelsCommand;
+import org.embl.mobie.command.context.ConfigureImageRenderingCommand;
+import org.embl.mobie.io.ContextProvider;
+import org.embl.mobie.lib.Services;
+import org.scijava.Context;
+import org.scijava.command.CommandService;
+import sc.fiji.bdvpg.PlaygroundPrefs;
+import software.amazon.awssdk.services.s3.S3Client;
 
-import java.io.File;
-
-public class DebugIssue1101
+public class DebugIssue1330
 {
+    static
+    {
+        net.imagej.patcher.LegacyInjector.preinit();
+        PlaygroundPrefs.setSourceTreeVisibility( false );
+    }
+
     public static void main( String[] args )
     {
         new ImageJ().ui().showUI();
-        final OpenMultipleImagesAndLabelsCommand command = new OpenMultipleImagesAndLabelsCommand();
-        command.image0 = "/Users/tischer/Downloads/example-png-no-open/iso.*.png";
-        command.run();
+        Context context = Services.commandService.getContext();
+        ContextProvider.setContext( context );
+        //S3Client.builder();
+
+        CommandService commandService = Services.commandService;
+        commandService.run( ConfigureImageRenderingCommand.class, true, "sourceAndConverters", null, "volumeViewer", null );
     }
 }

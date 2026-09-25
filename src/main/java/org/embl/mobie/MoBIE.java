@@ -30,17 +30,18 @@ package org.embl.mobie;
 
 import bdv.viewer.Source;
 import bdv.viewer.SourceAndConverter;
-import com.amazonaws.services.s3.AmazonS3ClientBuilder;
 import ij.IJ;
 import ij.WindowManager;
 import loci.common.DebugTools;
 import mpicbg.spim.data.sequence.VoxelDimensions;
 import net.imagej.ImageJ;
 import net.imglib2.type.numeric.RealType;
+import org.embl.mobie.io.ContextProvider;
 import org.embl.mobie.io.ImageDataFormat;
 import org.embl.mobie.io.imagedata.ImageData;
 import org.embl.mobie.io.util.IOHelper;
 import org.embl.mobie.io.util.S3Utils;
+import org.embl.mobie.lib.Services;
 import org.embl.mobie.lib.bdv.BdvViewingMode;
 import org.embl.mobie.lib.data.*;
 import org.embl.mobie.lib.hcs.HCSDataSetter;
@@ -61,9 +62,11 @@ import org.embl.mobie.plugins.platybrowser.GeneSearchCommand;
 import org.embl.mobie.ui.UserInterface;
 import org.embl.mobie.ui.WindowArrangementHelper;
 import org.jetbrains.annotations.NotNull;
+import org.scijava.Context;
 import sc.fiji.bdvpg.PlaygroundPrefs;
-import sc.fiji.bdvpg.scijava.services.SourceAndConverterService;
-import sc.fiji.bdvpg.services.SourceAndConverterServices;
+import sc.fiji.bdvpg.scijava.service.SourceService;
+import sc.fiji.bdvpg.service.SourceServices;
+import software.amazon.awssdk.services.s3.S3Client;
 import tech.tablesaw.api.Table;
 import tech.tablesaw.io.csv.CsvReadOptions;
 
@@ -87,12 +90,13 @@ public class MoBIE
 	static
 	{
 		net.imagej.patcher.LegacyInjector.preinit();
-		PlaygroundPrefs.setSourceAndConverterUIVisibility( false );
+		PlaygroundPrefs.setSourceTreeVisibility( false );
+		ContextProvider.setContext( Services.commandService.getContext() );
 
 		new Thread(() -> {
 			long start = System.currentTimeMillis();
-			AmazonS3ClientBuilder.standard();
-			IJ.log( "( Initialised AmazonS3ClientBuilder in " + ( System.currentTimeMillis() -start ) + " ms. )" );
+			S3Client.builder();
+			IJ.log( "( Initialised S3Client.builder in " + ( System.currentTimeMillis() - start ) + " ms. )" );
 		}).start();
 	}
 
@@ -154,9 +158,10 @@ public class MoBIE
 			}
 
 			// Check for additional view.json files of arbitrary names (requires search, which may not be available on S3)
+
 			if ( IOHelper.getType( projectUri ).equals( ResourceType.FILE ) )
 			{
-				// Find all .json files in the table parent dir
+				// Find all JSON files in the table dir
 				// and try to load them as views
 				String parentDir = getParentLocation( projectUri );
 				Files.walk( Paths.get( parentDir ), 1 )
@@ -173,10 +178,18 @@ public class MoBIE
 								// JSON file could not be parsed
 								IJ.log("[WARNING] Additional views parsing failed: " + p );
 							}
-						});
+						}
+				);
 			}
 
-			initUiAndShowView( dataset.views().values().iterator().next().getName() );
+			if ( dataset.views().keySet().contains( "default" ) )
+			{
+				initUiAndShowView( "default" );
+			}
+			else
+			{
+				initUiAndShowView( dataset.views().values().iterator().next().getName() );
+			}
 		}
 		else if ( settings.values.getProjectType().equals( ProjectType.MoBIEJSON ) )
 		{
@@ -188,14 +201,6 @@ public class MoBIE
 
 			openMoBIEProject();
 		}
-	}
-
-	private void addViewsFromUri( final String uri ) throws IOException
-	{
-		Map< String, View > nameToViews = ViewsJsonParser.loadViews( uri ).views;
-		for ( Map.Entry< String, View > nameViewEntry : nameToViews.entrySet() )
-			dataset.views().put( nameViewEntry.getKey(), nameViewEntry.getValue() );
-		IJ.log("Added views from: " + uri );
 	}
 
 	public static MoBIE getInstance()
@@ -218,6 +223,11 @@ public class MoBIE
 
 	public MoBIE( List< String > imagePaths, List< String > labelPaths, List< String > labelTablePaths, String root, GridType grid, MoBIESettings settings ) throws IOException
 	{
+		this( imagePaths, labelPaths, labelTablePaths, root, grid, settings, "all images" );
+	}
+
+	public MoBIE( List< String > imagePaths, List< String > labelPaths, List< String > labelTablePaths, String root, GridType grid, MoBIESettings settings, String viewBaseName ) throws IOException
+	{
 		initImageJAndMoBIE();
 
 		IJ.log("\n# MoBIE" );
@@ -225,8 +235,22 @@ public class MoBIE
 		this.settings = settings;
 
 		initProject( "" );
-		new GridImagesAndLabelsDataSetter( imagePaths, labelPaths, labelTablePaths, root, grid )
+		new GridImagesAndLabelsDataSetter( imagePaths, labelPaths, labelTablePaths, root, grid, viewBaseName )
 				.addToDataset( dataset );
+		initUiAndShowView( null );
+	}
+
+	public MoBIE( Table collectionTable, @Nullable String rootPath, MoBIESettings settings ) throws IOException
+	{
+		initImageJAndMoBIE();
+
+		IJ.log("\n# MoBIE" );
+		IJ.log("Opening data from in-memory collection table" );
+
+		this.settings = settings;
+
+		initProject( "" );
+		new CollectionDataSetter( collectionTable, rootPath ).addTableToDataset( dataset );
 		initUiAndShowView( null );
 	}
 
@@ -254,6 +278,14 @@ public class MoBIE
 		Table regionTable = sourcesCreator.getRegionTable();
 
 		openImageAndLabelGrids( imageSources, labelSources, regionTable );
+	}
+
+	private void addViewsFromUri( final String uri ) throws IOException
+	{
+		Map< String, View > nameToViews = ViewsJsonParser.loadViews( uri ).views;
+		for ( Map.Entry< String, View > nameViewEntry : nameToViews.entrySet() )
+			dataset.views().put( nameViewEntry.getKey(), nameViewEntry.getValue() );
+		IJ.log("Added views from: " + uri );
 	}
 
 	private void initTableSaw()
@@ -399,7 +431,7 @@ public class MoBIE
 		if( projectLocation.contains( "platybrowser" ) )
 		{
 			GeneSearchCommand.setMoBIE( this );
-			projectCommands.add( SourceAndConverterService.getCommandName( GeneSearchCommand.class ) );
+			projectCommands.add( SourceService.getCommandName( GeneSearchCommand.class ) );
 		}
 	}
 
@@ -519,6 +551,7 @@ public class MoBIE
 			IJ.log( "Closing I/O threads..." );
 			ThreadHelper.resetIOThreads();
 			viewManager.close();
+			moBIE = null;
 			IJ.log( "MoBIE closed." );
 			if ( settings.values.isOpenedFromCLI() )
 				System.exit( 0 );
@@ -630,7 +663,7 @@ public class MoBIE
 	// TODO https://github.com/bigdataviewer/bigdataviewer-playground/issues/259#issuecomment-1279705489
 	public void closeSourceAndConverter( SourceAndConverter< ? > sourceAndConverter, boolean closeImgLoader )
 	{
-		SourceAndConverterServices.getBdvDisplayService().removeFromAllBdvs( sourceAndConverter );
+		SourceServices.getBdvDisplayService().removeFromAllBdvs( sourceAndConverter );
 		String sourceName = sourceAndConverter.getSpimSource().getName();
 
 		if ( closeImgLoader )
@@ -638,7 +671,7 @@ public class MoBIE
 			// TODO ?
 		}
 
-		SourceAndConverterServices.getSourceAndConverterService().remove( sourceAndConverter );
+		SourceServices.getSourceService().remove( sourceAndConverter );
 	}
 
     public synchronized String getImageLocation( ImageDataFormat imageDataFormat, StorageLocation storageLocation )
